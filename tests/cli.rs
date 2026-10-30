@@ -7,7 +7,11 @@ use serde_json::{Value, json};
 
 fn signer(dir: &std::path::Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tuyo-signer"));
-    for name in ["TUYO_SIGNER_PROFILE", "TUYO_SIGNER_KEY_DIR", "TUYO_SIGNER_AUTO_UPDATE"] {
+    for name in [
+        "TUYO_SIGNER_PROFILE",
+        "TUYO_SIGNER_KEY_DIR",
+        "TUYO_SIGNER_AUTO_UPDATE",
+    ] {
         command.env_remove(name);
     }
     command
