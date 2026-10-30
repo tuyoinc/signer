@@ -113,12 +113,12 @@ mod tests {
 
     #[test]
     fn defaults_match_the_typescript_signer() {
-        let config =
-            Config::from(Overrides::default(), env(&[]), Some("/home/agent".into())).unwrap();
+        let home = resolve(Path::new("/home/agent")).unwrap();
+        let config = Config::from(Overrides::default(), env(&[]), Some(home.clone())).unwrap();
         assert_eq!(config.profile, "default");
         assert_eq!(
             config.data_dir,
-            PathBuf::from("/home/agent/.local/share/tuyo/signer/default")
+            home.join(".local/share/tuyo/signer/default")
         );
         assert_eq!(config.key_dir, config.data_dir.join("keys"));
         assert_eq!(config.storage, StorageSetting::Auto);
@@ -134,8 +134,11 @@ mod tests {
         ];
         let config = Config::from(Overrides::default(), env(&vars), None).unwrap();
         assert_eq!(config.profile, "plugin");
-        assert_eq!(config.data_dir, PathBuf::from("/srv/signer/p"));
-        assert_eq!(config.key_dir, PathBuf::from("/secrets/keys"));
+        assert_eq!(
+            config.data_dir,
+            resolve(Path::new("/srv/signer/p")).unwrap()
+        );
+        assert_eq!(config.key_dir, resolve(Path::new("/secrets/keys")).unwrap());
         assert_eq!(config.storage, StorageSetting::Only(StorageName::File));
 
         let flags = Overrides {
