@@ -26,7 +26,15 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - name: cargo test
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked 2>&1 | tee "${RUNNER_TEMP}/test.log"
+      - name: Report test failures
+        if: failure()
+        shell: bash
+        run: grep -E "panicked|FAILED|left:|right:" "${RUNNER_TEMP}/test.log" | head -20 | sed 's/^/::error::/' || true
 
   musl:
     name: Static Linux build
