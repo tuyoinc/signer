@@ -1,6 +1,6 @@
 [package]
 name = "tuyo-signer"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2024"
 rust-version = "1.89"
 description = "Offline local signer for Tuyo agents: keeps a secp256k1 key in the OS keychain or an owner-only file and signs hashes over MCP or the command line."
