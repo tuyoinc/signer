@@ -293,7 +293,9 @@ jobs:
             -rawin -in dist/manifest.json -sigfile dist/manifest.json.sig
           rm -f "${key}"
 
-      - uses: actions/attest-build-provenance@v2
+      # Attestations need a public repository on the current GitHub plan.
+      - if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/tuyo-signer-*
 
