@@ -23,8 +23,7 @@ struct Tool {
 }
 
 const TAG: &str = r#"{"type":"string","pattern":"^[a-zA-Z0-9_-]{1,64}$","description":"1 to 64 letters, digits, _ or -, unique within the profile."}"#;
-const ADDRESS: &str =
-    r#"{"type":"string","pattern":"^0x[0-9a-fA-F]{40}$","description":"The signer's address."}"#;
+const SIGNER: &str = r#"{"type":"string","pattern":"^(0x[0-9a-fA-F]{40}|[a-zA-Z0-9_-]{1,64})$","description":"The signer's address or tag."}"#;
 const HASH: &str = r#"{"type":"string","pattern":"^0x[0-9a-fA-F]{64}$","description":"The 32-byte hash to sign, exactly as the preparing flow supplied it."}"#;
 const TOUCH_ID: &str = r#"{"type":"boolean","description":"macOS only. Require Touch ID (or the login password) for every signature with this signer. Set only when the user asked for it; it cannot be changed later."}"#;
 
@@ -49,9 +48,9 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "sign_hash",
-        description: "Sign a 32-byte hash, such as a UserOperation hash, using personal_sign (EIP-191) with the signer whose address is given. Signers created with requireTouchId wait for the user to approve with Touch ID. Returns only the signer tag and address, the hash and the signature. Sign only a hash supplied by a trusted Tuyo flow for an operation the user requested. Does not authorize permissions, access HTTP APIs or broadcast transactions.",
+        description: "Sign a 32-byte hash, such as a UserOperation hash, using personal_sign (EIP-191) with the signer whose address or tag is given. Signers created with requireTouchId wait for the user to approve with Touch ID. Returns only the signer tag and address, the hash and the signature. Sign only a hash supplied by a trusted Tuyo flow for an operation the user requested. Does not authorize permissions, access HTTP APIs or broadcast transactions.",
         read_only: false,
-        params: &[("signer", ADDRESS, true), ("hash", HASH, true)],
+        params: &[("signer", SIGNER, true), ("hash", HASH, true)],
     },
     Tool {
         name: "get_status",

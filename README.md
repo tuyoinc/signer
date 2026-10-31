@@ -41,7 +41,7 @@ A profile holds any number of signers, each created under a tag. No tool returns
 | `list_signers` | none | `{signers: [...]}` |
 | `get_signer` | `{tag}` | the signer, or `signer_not_found` |
 | `create_signer` | `{tag, requireTouchId?}` | the new signer, or the existing one with that tag after checking its key is still there |
-| `sign_hash` | `{signer, hash}` | `{tag, signer, hash, signature}` |
+| `sign_hash` | `{signer, hash}`, where `signer` is an address or a tag | `{tag, signer, hash, signature}` |
 | `get_status` | none | version, profile, key storage and update status |
 
 A signer is `{tag, algorithm: "secp256k1", publicKey, address, storage, createdAt, requireTouchId?}`. `address` is what you register as the onchain signer. `storage` is `keychain` or `file`.
@@ -57,7 +57,7 @@ tuyo-signer create agent                  # create or show a signer
 tuyo-signer create mac --require-touch-id # macOS: Touch ID for every signature
 tuyo-signer list
 tuyo-signer get agent
-tuyo-signer sign-hash --signer 0x… --hash 0x…
+tuyo-signer sign-hash --signer agent --hash 0x…  # tag or address
 tuyo-signer status --check                # version, storage, update status
 tuyo-signer update                        # install the latest release
 tuyo-signer mcp                           # MCP server on stdio

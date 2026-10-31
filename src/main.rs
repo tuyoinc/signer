@@ -62,7 +62,7 @@ enum Command {
     },
     /// Sign a 32-byte hash with personal_sign (EIP-191).
     SignHash {
-        /// The signer's address.
+        /// The signer's address or tag.
         #[arg(long)]
         signer: String,
         /// The 32-byte hash, 0x-prefixed.
