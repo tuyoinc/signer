@@ -1,5 +1,4 @@
 //! The profile's public metadata (`state.json`) and its cross-process lock.
-//! Same layout as the TypeScript signer, so existing profiles keep working.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
@@ -230,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_and_writes_typescript_profiles() {
+    fn reads_and_writes_existing_profiles() {
         let dir = tempfile::tempdir().unwrap();
         let store = StateStore::new(dir.path().join("p"));
         assert!(store.read().unwrap().signers.is_empty());

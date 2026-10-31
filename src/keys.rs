@@ -116,8 +116,8 @@ pub fn parse_hash(input: &str) -> Option<[u8; 32]> {
     parse_hex(input, 32).map(|v| v.try_into().expect("32 bytes"))
 }
 
-/// How backends that hold a software key serialize it. Compatible with the
-/// TypeScript signer: `{"version":1,"algorithm":"secp256k1","privateKey":"0x…"}`.
+/// How backends that hold a software key serialize it:
+/// `{"version":1,"algorithm":"secp256k1","privateKey":"0x…"}`.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Secret {
@@ -193,7 +193,7 @@ mod tests {
         );
     }
 
-    // Expected values computed with viem 2.56.3, the TypeScript signer's library:
+    // Expected values computed with viem 2.56.3:
     // privateKeyToAccount(pk).signMessage({ message: { raw: hash } }).
     #[test]
     fn matches_viem_personal_sign() {

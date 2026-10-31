@@ -19,7 +19,7 @@ Everything below is optional: without it, releases still build and publish, with
 
 ## macOS signing and notarization
 
-Uses the same Developer ID Application certificate and notarization login as pulgar. No App ID or provisioning profile is needed: the signer uses the regular login keychain and LocalAuthentication, which need no entitlements.
+Needs a Developer ID Application certificate and an Apple Account for notarization. No App ID or provisioning profile is needed: the signer uses the regular login keychain and LocalAuthentication, which need no entitlements.
 
 Create a `macos-signing` environment on this repository with:
 

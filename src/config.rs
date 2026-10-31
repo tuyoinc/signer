@@ -1,5 +1,4 @@
-//! Profile, directories and key storage from flags and environment. The
-//! variables are the TypeScript signer's, so existing configs keep working.
+//! Profile, directories and key storage from flags and environment.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -76,8 +75,8 @@ impl Config {
     }
 }
 
-/// An absolute, lexically normalized path, like Node's `path.resolve`. The
-/// keychain account is derived from it, so it must match the TypeScript signer.
+/// An absolute, lexically normalized path, like Node's `path.resolve`. Keys
+/// stored by earlier versions are found by a hash of it, so it must stay stable.
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path).map_err(|_| invalid("Invalid data directory."))?;
     let mut out = PathBuf::new();
@@ -112,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_typescript_signer() {
+    fn uses_default_directories() {
         let home = resolve(Path::new("/home/agent")).unwrap();
         let config = Config::from(Overrides::default(), env(&[]), Some(home.clone())).unwrap();
         assert_eq!(config.profile, "default");

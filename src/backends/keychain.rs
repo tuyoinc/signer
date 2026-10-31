@@ -30,8 +30,8 @@ impl KeychainBackend {
         }
     }
 
-    /// The account the Node signer used: sha256(data directory || NUL || tag).
-    /// Only read, to pick up keys it created.
+    /// The account earlier versions used: sha256(data directory || NUL || tag).
+    /// Only read, to pick up keys they created.
     pub fn legacy_account(&self, tag: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.data_dir.as_bytes());
@@ -71,7 +71,7 @@ impl KeyBackend for KeychainBackend {
         {
             return Ok(Some(stored));
         }
-        // A key the Node signer stored for this tag. Move it under its address
+        // A key an earlier version stored for this tag. Move it under its address
         // so it shows up as such; the old item is left if it can't be removed.
         let legacy = self.legacy_account(tag);
         let Some(stored) = Self::read(&legacy)? else {

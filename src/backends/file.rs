@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_typescript_key_files() {
+    fn reads_key_files_without_touch_id() {
         let dir = tempfile::tempdir().unwrap();
         let backend = FileBackend::new(dir.path().to_path_buf());
         let path = backend.path("ts");
