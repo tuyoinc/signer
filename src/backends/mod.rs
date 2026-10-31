@@ -13,8 +13,9 @@ use crate::state::StorageName;
 
 pub trait KeyBackend {
     fn name(&self) -> StorageName;
-    /// Keys are addressed by the signer's tag, unique within a profile.
-    fn load(&self, tag: &str) -> Result<Option<StoredKey>>;
+    /// Loads the key of the signer with this tag, unique within a profile, and
+    /// address, when known. Before a signer is saved its address is unknown.
+    fn load(&self, tag: &str, address: Option<&str>) -> Result<Option<StoredKey>>;
     fn create(&self, tag: &str, require_touch_id: bool) -> Result<StoredKey>;
 }
 

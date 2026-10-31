@@ -67,7 +67,7 @@ tuyo-signer mcp                           # MCP server on stdio
 
 | Backend | Where the key lives | Who can read it |
 | --- | --- | --- |
-| `keychain` | macOS login keychain, Windows Credential Manager or Linux Secret Service, under service `com.tuyo.signer` and an account derived from the data directory and tag | macOS: only this binary without a prompt; the item's access list trusts the binary that created it, and release builds are signed with Tuyo's Developer ID so updates keep access. Windows and Linux: any process of the same user. Encrypted at rest. |
+| `keychain` | macOS login keychain, Windows Credential Manager or Linux Secret Service, under service `com.tuyo.signer` with the signer's address as the account. Keys the Node signer stored under its hashed account names are found and moved to their address. | macOS: only this binary without a prompt; the item's access list trusts the binary that created it, and release builds are signed with Tuyo's Developer ID so updates keep access. Windows and Linux: any process of the same user. Encrypted at rest. |
 | `file` | `<tag>.key` in the profile's `keys/` directory, or `TUYO_SIGNER_KEY_DIR`, mode `0600` in a `0700` directory | Any process running as the same user, and anyone who can read the disk or its backups. Refused if it is a symlink, not owned by this user or readable by others. |
 
 `TUYO_SIGNER_KEY_STORAGE` picks the backend for new signers:
