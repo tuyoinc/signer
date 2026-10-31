@@ -102,11 +102,10 @@ impl Service {
         })
     }
 
-    /// personal_sign (EIP-191) over the raw 32-byte hash.
+    /// personal_sign (EIP-191) over the raw 32-byte hash. `signer` is the
+    /// signer's address or its tag.
     pub fn sign_hash(&self, signer: &str, hash: &str) -> Result<Signature> {
-        let address = keys::normalize_address(signer).ok_or_else(|| {
-            SignerError::new("invalid_request", "signer must be a 20-byte hex address.")
-        })?;
+        let wanted = SignerRef::parse(signer)?;
         let digest = keys::parse_hash(hash).ok_or_else(|| {
             SignerError::new(
                 "invalid_request",
@@ -120,7 +119,7 @@ impl Service {
                 .read()?
                 .signers
                 .into_iter()
-                .find(|s| s.address == address)
+                .find(|s| wanted.matches(s))
                 .ok_or_else(|| {
                     SignerError::new(
                         "signer_not_found",
@@ -175,6 +174,38 @@ impl Service {
             ));
         }
         Ok(stored)
+    }
+}
+
+/// How a signing request names its signer.
+enum SignerRef {
+    Address(String),
+    Tag(String),
+}
+
+impl SignerRef {
+    fn parse(input: &str) -> Result<Self> {
+        if input.starts_with("0x") && input.len() == 42 {
+            return keys::normalize_address(input)
+                .map(Self::Address)
+                .ok_or_else(|| {
+                    SignerError::new("invalid_request", "signer is not a valid address.")
+                });
+        }
+        if state::valid_tag(input) {
+            return Ok(Self::Tag(input.to_owned()));
+        }
+        Err(SignerError::new(
+            "invalid_request",
+            "signer must be a signer's address or tag.",
+        ))
+    }
+
+    fn matches(&self, signer: &Signer) -> bool {
+        match self {
+            Self::Address(address) => signer.address == *address,
+            Self::Tag(tag) => signer.tag == *tag,
+        }
     }
 }
 
@@ -298,6 +329,9 @@ pub mod tests {
         assert_eq!(signed.hash, hash.to_lowercase());
         assert_eq!(signed.signature.len(), 132);
         assert!(f.approvals.borrow().is_empty());
+
+        let by_tag = f.service.sign_hash("ops", &hash).unwrap();
+        assert_eq!(by_tag.signature, signed.signature);
     }
 
     #[test]
