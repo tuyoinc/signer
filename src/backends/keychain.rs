@@ -1,7 +1,9 @@
 //! macOS login keychain, Windows Credential Manager or Linux Secret Service.
 //!
-//! On macOS the item's access list trusts the binary that created it, so a
-//! signed `tuyo-signer` reads its key silently and any other program prompts.
+//! Each key is an item under service `com.tuyo.signer` whose account is the
+//! signer's address. On macOS the item's access list trusts the binary that
+//! created it, so a signed `tuyo-signer` reads its key silently and any other
+//! program prompts.
 
 use std::path::Path;
 use std::sync::mpsc;
@@ -15,7 +17,6 @@ use crate::error::Result;
 use crate::keys::{self, SigningKey, StoredKey};
 use crate::state::StorageName;
 
-/// Same service as the TypeScript signer, so its keychain entries are found.
 pub const SERVICE: &str = "com.tuyo.signer";
 
 pub struct KeychainBackend {
@@ -29,8 +30,9 @@ impl KeychainBackend {
         }
     }
 
-    /// sha256(data directory || NUL || tag), as the TypeScript signer computes it.
-    pub fn account(&self, tag: &str) -> String {
+    /// The account the Node signer used: sha256(data directory || NUL || tag).
+    /// Only read, to pick up keys it created.
+    pub fn legacy_account(&self, tag: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.data_dir.as_bytes());
         hasher.update(b"\0");
@@ -38,8 +40,23 @@ impl KeychainBackend {
         hex::encode(hasher.finalize())
     }
 
-    fn entry(&self, tag: &str) -> Result<keyring::Entry> {
-        keyring::Entry::new(SERVICE, &self.account(tag)).map_err(|_| keychain_unavailable())
+    fn entry(account: &str) -> Result<keyring::Entry> {
+        keyring::Entry::new(SERVICE, account).map_err(|_| keychain_unavailable())
+    }
+
+    fn read(account: &str) -> Result<Option<StoredKey>> {
+        match Self::entry(account)?.get_password() {
+            Ok(secret) => keys::decode_secret(&Zeroizing::new(secret)).map(Some),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(keychain_unavailable()),
+        }
+    }
+
+    fn write(account: &str, stored: &StoredKey) -> Result<()> {
+        let secret = keys::encode_secret(&stored.key, stored.require_touch_id);
+        Self::entry(account)?
+            .set_password(&secret)
+            .map_err(|_| keychain_unavailable())
     }
 }
 
@@ -48,24 +65,35 @@ impl KeyBackend for KeychainBackend {
         StorageName::Keychain
     }
 
-    fn load(&self, tag: &str) -> Result<Option<StoredKey>> {
-        match self.entry(tag)?.get_password() {
-            Ok(secret) => keys::decode_secret(&Zeroizing::new(secret)).map(Some),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Err(keychain_unavailable()),
+    fn load(&self, tag: &str, address: Option<&str>) -> Result<Option<StoredKey>> {
+        if let Some(address) = address
+            && let Some(stored) = Self::read(address)?
+        {
+            return Ok(Some(stored));
         }
+        // A key the Node signer stored for this tag. Move it under its address
+        // so it shows up as such; the old item is left if it can't be removed.
+        let legacy = self.legacy_account(tag);
+        let Some(stored) = Self::read(&legacy)? else {
+            return Ok(None);
+        };
+        let own = stored.key.address();
+        if address.is_none_or(|a| a == own)
+            && Self::write(&own, &stored).is_ok()
+            && let Ok(entry) = Self::entry(&legacy)
+        {
+            let _ = entry.delete_credential();
+        }
+        Ok(Some(stored))
     }
 
-    fn create(&self, tag: &str, require_touch_id: bool) -> Result<StoredKey> {
-        let key = SigningKey::generate();
-        let secret = keys::encode_secret(&key, require_touch_id);
-        self.entry(tag)?
-            .set_password(&secret)
-            .map_err(|_| keychain_unavailable())?;
-        Ok(StoredKey {
-            key,
+    fn create(&self, _tag: &str, require_touch_id: bool) -> Result<StoredKey> {
+        let stored = StoredKey {
+            key: SigningKey::generate(),
             require_touch_id,
-        })
+        };
+        Self::write(&stored.key.address(), &stored)?;
+        Ok(stored)
     }
 }
 

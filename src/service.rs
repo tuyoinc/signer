@@ -83,7 +83,7 @@ impl Service {
             }
             let backend = self.storage.for_new_signer(require_touch_id)?;
             // Reuse a key left by a creation that stopped before saving the profile.
-            let stored = match backend.load(tag)? {
+            let stored = match backend.load(tag, None)? {
                 Some(stored) => stored,
                 None => backend.create(tag, require_touch_id)?,
             };
@@ -150,7 +150,7 @@ impl Service {
         let stored = self
             .storage
             .for_signer(signer.storage)?
-            .load(&signer.tag)?
+            .load(&signer.tag, Some(&signer.address))?
             .ok_or_else(|| {
                 SignerError::new(
                     "key_missing",
@@ -240,7 +240,7 @@ pub mod tests {
         fn name(&self) -> StorageName {
             StorageName::Keychain
         }
-        fn load(&self, tag: &str) -> Result<Option<StoredKey>> {
+        fn load(&self, tag: &str, _address: Option<&str>) -> Result<Option<StoredKey>> {
             self.0
                 .borrow()
                 .get(tag)

@@ -31,7 +31,7 @@ impl KeyBackend for FileBackend {
         StorageName::File
     }
 
-    fn load(&self, tag: &str) -> Result<Option<StoredKey>> {
+    fn load(&self, tag: &str, _address: Option<&str>) -> Result<Option<StoredKey>> {
         // Refuse symlinks so the key cannot be redirected to a shared location.
         let mut file = match fsutil::open_no_follow(&self.path(tag)) {
             Ok(file) => file,
@@ -98,13 +98,13 @@ mod tests {
     fn creates_owner_only_keys_and_never_replaces_them() {
         let dir = tempfile::tempdir().unwrap();
         let backend = FileBackend::new(dir.path().join("keys"));
-        assert!(backend.load("a").unwrap().is_none());
+        assert!(backend.load("a", None).unwrap().is_none());
         let created = backend.create("a", false).unwrap();
-        let loaded = backend.load("a").unwrap().unwrap();
+        let loaded = backend.load("a", None).unwrap().unwrap();
         assert_eq!(loaded.key.address(), created.key.address());
         assert_eq!(backend.create("a", false).unwrap_err().code, "key_exists");
         assert_eq!(
-            backend.load("a").unwrap().unwrap().key.address(),
+            backend.load("a", None).unwrap().unwrap().key.address(),
             created.key.address()
         );
         #[cfg(unix)]
@@ -131,10 +131,16 @@ mod tests {
         let backend = FileBackend::new(dir.path().to_path_buf());
         backend.create("a", false).unwrap();
         fs::set_permissions(backend.path("a"), fs::Permissions::from_mode(0o644)).unwrap();
-        assert_eq!(backend.load("a").unwrap_err().code, "insecure_key_file");
+        assert_eq!(
+            backend.load("a", None).unwrap_err().code,
+            "insecure_key_file"
+        );
 
         std::os::unix::fs::symlink(backend.path("a"), backend.path("b")).unwrap();
-        assert_eq!(backend.load("b").unwrap_err().code, "key_file_unreadable");
+        assert_eq!(
+            backend.load("b", None).unwrap_err().code,
+            "key_file_unreadable"
+        );
     }
 
     #[test]
@@ -145,7 +151,7 @@ mod tests {
         let mut file = fsutil::create_private_file(&path).unwrap();
         file.write_all(br#"{"version":1,"algorithm":"secp256k1","privateKey":"0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318"}
 "#).unwrap();
-        let loaded = backend.load("ts").unwrap().unwrap();
+        let loaded = backend.load("ts", None).unwrap().unwrap();
         assert_eq!(
             loaded.key.address(),
             "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23"
