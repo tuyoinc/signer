@@ -6,12 +6,13 @@ mod error;
 mod fsutil;
 mod keys;
 mod mcp;
+mod request;
 mod service;
 mod state;
 mod touchid;
 mod update;
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -21,6 +22,7 @@ use serde_json::json;
 use backends::{FileBackend, KeyStorage, KeychainBackend, StorageSetting};
 use config::{Config, Overrides};
 use error::SignerError;
+use request::{IdentityInput, SignExecutionInput};
 use service::{Hooks, Service};
 use state::StateStore;
 use update::Updater;
@@ -29,7 +31,7 @@ use update::Updater;
 #[command(
     name = "tuyo-signer",
     version,
-    about = "Offline signer for Tuyo agents. Keeps secp256k1 keys in the OS keychain or an owner-only file and signs hashes."
+    about = "Offline signer for Tuyo agents. Signs identity assertions and operation hashes with locally stored keys."
 )]
 struct Cli {
     /// Profile name (TUYO_SIGNER_PROFILE, default "default").
@@ -69,6 +71,26 @@ enum Command {
         #[arg(long)]
         hash: String,
     },
+    /// Print an opaque five-minute identity token for the Tuyo-Agent-Identity header.
+    Identity {
+        /// The original agent key's tag or address.
+        #[arg(long)]
+        signer: String,
+        /// API issuer override; defaults to TUYO_SIGNER_API_ISSUER or https://api.tuyo.com/.
+        #[arg(long)]
+        issuer: Option<String>,
+        /// API audience override; defaults to TUYO_SIGNER_API_AUDIENCE or issuer + public.
+        #[arg(long)]
+        audience: Option<String>,
+        /// Opaque scope interpreted by the API; all adds no restriction to existing permissions.
+        #[arg(long, default_value = "all")]
+        scope: String,
+        /// Return structured metadata, token and headers instead of only the token.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Sign backend-prepared bytes offline. Read {signer, signing} JSON from stdin. Payload meaning is not checked.
+    SignExecution,
     /// Show version, configuration and update status.
     Status {
         /// Check for a new release now.
@@ -115,8 +137,6 @@ fn run(cli: Cli) -> Result<(), SignerError> {
 
     match cli.command {
         Command::Mcp => {
-            background_update(updater);
-            let updater = Updater::from_env();
             let server = mcp::Server {
                 service: &service,
                 updater: &updater,
@@ -136,6 +156,29 @@ fn run(cli: Cli) -> Result<(), SignerError> {
             require_touch_id,
         } => print(service.create_signer(&tag, require_touch_id)?),
         Command::SignHash { signer, hash } => print(service.sign_hash(&signer, &hash)?),
+        Command::Identity {
+            signer,
+            issuer,
+            audience,
+            scope,
+            json,
+        } => {
+            let identity = service.identity(&IdentityInput {
+                signer,
+                issuer,
+                audience,
+                scope,
+            })?;
+            if json {
+                print(identity)
+            } else {
+                println!("{}", identity.token);
+                Ok(())
+            }
+        }
+        Command::SignExecution => {
+            print(service.sign_execution(&read_input::<SignExecutionInput>()?)?)
+        }
         Command::Status { check } => {
             let check_error = if check {
                 updater.check(true).err()
@@ -163,26 +206,26 @@ fn run(cli: Cli) -> Result<(), SignerError> {
     }
 }
 
-/// Checks for a release at most once a day while the MCP server runs, and
-/// installs it when TUYO_SIGNER_AUTO_UPDATE=1 (for agent machines we run).
-/// The new version takes effect on the next start.
-fn background_update(updater: Updater) {
-    let var = |name: &str| std::env::var(name).unwrap_or_default();
-    if !updater.enabled() || var("TUYO_SIGNER_UPDATE_CHECK") == "0" {
-        return;
+fn read_input<T: serde::de::DeserializeOwned>() -> Result<T, SignerError> {
+    let mut input = zeroize::Zeroizing::new(String::new());
+    std::io::stdin()
+        .take(256 * 1024 + 1)
+        .read_to_string(&mut input)
+        .map_err(|_| {
+            SignerError::new("invalid_request", "Could not read request JSON from stdin.")
+        })?;
+    if input.len() > 256 * 1024 {
+        return Err(SignerError::new(
+            "invalid_request",
+            "Request JSON exceeds 256 KiB.",
+        ));
     }
-    let auto = var("TUYO_SIGNER_AUTO_UPDATE") == "1";
-    std::thread::spawn(move || {
-        if updater.check(false).is_ok() && auto && updater.status().update_available {
-            match updater.apply() {
-                Ok(Some(version)) => eprintln!(
-                    "tuyo-signer: installed {version}; it takes effect on the next start."
-                ),
-                Ok(None) => {}
-                Err(error) => eprintln!("tuyo-signer: automatic update failed: {}", error.code),
-            }
-        }
-    });
+    serde_json::from_str(&input).map_err(|_| {
+        SignerError::new(
+            "invalid_request",
+            "Pass the tool's JSON arguments on stdin. Check the required fields and types.",
+        )
+    })
 }
 
 fn print(value: impl serde::Serialize) -> Result<(), SignerError> {

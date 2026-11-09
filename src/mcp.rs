@@ -1,5 +1,5 @@
 //! A minimal MCP server over stdio (newline-delimited JSON-RPC 2.0). The
-//! signer has five tools and no other capabilities, so the protocol is
+//! signer has a small fixed tool set and no other capabilities, so the protocol is
 //! implemented directly instead of through an SDK.
 
 use std::io::{BufRead, Write};
@@ -7,12 +7,13 @@ use std::io::{BufRead, Write};
 use serde_json::{Map, Value, json};
 
 use crate::error::SignerError;
+use crate::request::{IdentityInput, SignExecutionInput};
 use crate::service::Service;
 use crate::update::{Updater, VERSION};
 
 const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-const INSTRUCTIONS: &str = "Local Tuyo signer. Holds any number of tagged signing keys in the operating system credential store, or in owner-only key files on hosts without one, and signs 32-byte hashes, such as UserOperation hashes, offline. Never prepares operations, accesses HTTP APIs or chain RPC, or broadcasts transactions. Never request or reveal private keys. Sign only a hash supplied by a trusted Tuyo flow for an operation the user requested.";
+const INSTRUCTIONS: &str = "Offline Tuyo signer. Call identity with the original agent signer, then attach headers.Tuyo-Agent-Identity alongside OAuth on every manager request, including preparation, status and submission. Identity lasts five minutes and can be reused or refreshed for each request. For on-chain execution, also call sign_execution with the unchanged backend-provided signing envelope and the same signer; attach identity when sending its returned submission. Neither tool needs an OAuth credential. Identity proves the key, not approval of a transaction. Keys remain local; never request or reveal private keys. No signer tool sends HTTP requests or broadcasts; MCP never checks for updates online.";
 
 struct Tool {
     name: &'static str,
@@ -26,6 +27,10 @@ const TAG: &str = r#"{"type":"string","pattern":"^[a-zA-Z0-9_-]{1,64}$","descrip
 const SIGNER: &str = r#"{"type":"string","pattern":"^(0x[0-9a-fA-F]{40}|[a-zA-Z0-9_-]{1,64})$","description":"The signer's address or tag."}"#;
 const HASH: &str = r#"{"type":"string","pattern":"^0x[0-9a-fA-F]{64}$","description":"The 32-byte hash to sign, exactly as the preparing flow supplied it."}"#;
 const TOUCH_ID: &str = r#"{"type":"boolean","description":"macOS only. Require Touch ID (or the login password) for every signature with this signer. Set only when the user asked for it; it cannot be changed later."}"#;
+const ISSUER: &str = r#"{"type":"string","description":"Optional OAuth issuer override. Defaults to TUYO_SIGNER_API_ISSUER, or https://api.tuyo.com/. No URL is fetched."}"#;
+const AUDIENCE: &str = r#"{"type":"string","description":"Optional public API OAuth resource URI override. Defaults to TUYO_SIGNER_API_AUDIENCE, or issuer + public."}"#;
+const SCOPE: &str = r#"{"type":"string","default":"all","description":"Opaque scope signed unchanged; the API defines and enforces supported values. Defaults to all, adding no restriction to existing permissions."}"#;
+const SIGNING: &str = r#"{"type":"object","additionalProperties":false,"required":["version","method","encoding","data"],"properties":{"version":{"const":1},"method":{"const":"personal_sign"},"encoding":{"const":"hex"},"data":{"type":"string","pattern":"^0x([0-9a-fA-F]{2})*$","maxLength":131074},"expiresAt":{"type":"string","format":"date-time"},"submission":{"type":"object","additionalProperties":false,"required":["method","path","body"],"properties":{"method":{"enum":["POST","PUT","PATCH","DELETE"]},"path":{"type":"string","maxLength":4096,"description":"Origin-relative backend path; no host or fragment."},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"object","required":["signature"],"properties":{"signature":{"type":"null"}},"additionalProperties":true}}}},"description":"Copy the complete signing object supplied by the backend. Signs data as exact bytes; it does not interpret or verify the operation's meaning. Optional submission instructions produce a ready-to-send request with body.signature filled."}"#;
 
 const TOOLS: &[Tool] = &[
     Tool {
@@ -45,6 +50,23 @@ const TOOLS: &[Tool] = &[
         description: "Create a signer with a new key under a tag, or return the existing signer with that tag. A new key goes to the OS credential store, or to an owner-only key file on hosts without one. Returns only public metadata, including where the key is stored.",
         read_only: false,
         params: &[("tag", TAG, true), ("requireTouchId", TOUCH_ID, false)],
+    },
+    Tool {
+        name: "identity",
+        description: "Prove possession of the original agent key offline. Pass only signer (tag or address); clock, protocol version and five-minute expiry are automatic. Returns an opaque token, scope, expiry and headers.Tuyo-Agent-Identity ready to attach alongside OAuth to every manager request, including preparation, status and submission. Optional scope is any string, signed unchanged and defaulting to all; the API defines and enforces supported values. Reuse until expiresAt or call again for each request. No OAuth credential, HTTP request data or server challenge is needed. This authenticates identity; on-chain execution still needs its separate operation signature from sign_execution. Nothing is sent or persisted. Touch ID keys require approval.",
+        read_only: false,
+        params: &[
+            ("signer", SIGNER, true),
+            ("issuer", ISSUER, false),
+            ("audience", AUDIENCE, false),
+            ("scope", SCOPE, false),
+        ],
+    },
+    Tool {
+        name: "sign_execution",
+        description: "Sign arbitrary backend-prepared bytes offline with the selected key using personal_sign. Pass signer and the backend's signing envelope unchanged. Returns signature and, when submission is provided, a request with body.signature filled. Does not parse execution IDs, status, chains or calldata and does not verify payload meaning. No OAuth credential is needed. Send the result with the backend's required authentication; manager flows also require identity from the same key. Nothing is sent. Touch ID keys require one approval.",
+        read_only: false,
+        params: &[("signer", SIGNER, true), ("signing", SIGNING, true)],
     },
     Tool {
         name: "sign_hash",
@@ -163,6 +185,16 @@ impl Server<'_> {
                 to_value(self.service.create_signer(string("tag")?, touch_id)?)
             }
             "sign_hash" => to_value(self.service.sign_hash(string("signer")?, string("hash")?)?),
+            "identity" => {
+                let input: IdentityInput = serde_json::from_value(Value::Object(args.clone()))
+                    .map_err(|_| invalid("Check the identity arguments and their types."))?;
+                to_value(self.service.identity(&input)?)
+            }
+            "sign_execution" => {
+                let input: SignExecutionInput = serde_json::from_value(Value::Object(args.clone()))
+                    .map_err(|_| invalid("Check the sign_execution arguments and their types."))?;
+                to_value(self.service.sign_execution(&input)?)
+            }
             "get_status" => {
                 let mut status = to_value(self.updater.status());
                 status["profile"] = json!(self.profile);
@@ -199,7 +231,7 @@ fn tool_json(tool: &Tool) -> Value {
         "annotations": {
             "readOnlyHint": tool.read_only,
             "destructiveHint": !tool.read_only,
-            "idempotentHint": true,
+            "idempotentHint": tool.name != "identity",
             "openWorldHint": false,
         },
     })
@@ -285,6 +317,8 @@ mod tests {
                 "list_signers",
                 "get_signer",
                 "create_signer",
+                "identity",
+                "sign_execution",
                 "sign_hash",
                 "get_status"
             ]
@@ -308,6 +342,60 @@ mod tests {
             json!({"name": "sign_hash", "arguments": {"signer": signer["address"], "hash": hash}}),
         );
         assert_eq!(signed["result"]["structuredContent"]["hash"], hash);
+
+        let request = call(
+            &server,
+            8,
+            "tools/call",
+            json!({
+                "name":"identity", "arguments":{
+                    "signer":"agent",
+                },
+            }),
+        );
+        assert!(
+            request["result"]["structuredContent"]["headers"]["Tuyo-Agent-Identity"].is_string()
+        );
+        assert!(!request.to_string().contains("mcp-test-bearer"));
+        let identity = &request["result"]["structuredContent"];
+        assert_eq!(identity["scope"], "all");
+        assert_eq!(
+            identity["token"],
+            identity["headers"]["Tuyo-Agent-Identity"]
+        );
+        let scoped = call(
+            &server,
+            10,
+            "tools/call",
+            json!({
+                "name":"identity", "arguments":{"signer":"agent", "scope":"future:pod/read"}
+            }),
+        );
+        assert_eq!(
+            scoped["result"]["structuredContent"]["scope"],
+            "future:pod/read"
+        );
+
+        let expires = (time::OffsetDateTime::now_utc() + time::Duration::seconds(120))
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+        let submission = call(
+            &server,
+            9,
+            "tools/call",
+            json!({
+                "name":"sign_execution", "arguments":{
+                    "signer":"agent", "signing":{
+                        "version":1,"method":"personal_sign","encoding":"hex","data":"0x00ff", "expiresAt":expires,
+                        "submission":{"method":"PUT","path":"/public/future_submission", "body":{"signature":null}},
+                    },
+                },
+            }),
+        );
+        assert!(
+            submission["result"]["structuredContent"]["request"]["body"]["signature"].is_string()
+        );
+        assert!(!submission.to_string().contains("mcp-test-bearer"));
 
         let extra = call(
             &server,

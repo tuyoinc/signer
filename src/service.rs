@@ -5,6 +5,7 @@ use serde::Serialize;
 use crate::backends::KeyStorage;
 use crate::error::{Result, SignerError};
 use crate::keys::{self, StoredKey};
+use crate::request::{self, IdentityInput, SignExecutionInput, SignedExecution, SignedIdentity};
 use crate::state::{self, Signer, StateStore};
 
 type Check = Box<dyn Fn() -> Result<()>>;
@@ -39,6 +40,13 @@ pub struct Service {
 #[derive(Serialize)]
 pub struct SignerList {
     pub signers: Vec<Signer>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MessageSignature {
+    pub tag: String,
+    pub signer: String,
+    pub signature: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,42 +113,84 @@ impl Service {
     /// personal_sign (EIP-191) over the raw 32-byte hash. `signer` is the
     /// signer's address or its tag.
     pub fn sign_hash(&self, signer: &str, hash: &str) -> Result<Signature> {
-        let wanted = SignerRef::parse(signer)?;
+        self.sign_hash_for(signer, hash, "sign a Tuyo operation")
+    }
+
+    pub fn identity(&self, input: &IdentityInput) -> Result<SignedIdentity> {
+        let signer = self.find_signer(&SignerRef::parse(&input.signer)?)?;
+        let prepared = input.prepare(&signer.address, request::now()?)?;
+        let signature = self.sign_hash_for(
+            &signer.address,
+            &prepared.digest,
+            "prove agent identity for five minutes",
+        )?;
+        prepared.signed(signature, request::now()?)
+    }
+
+    pub fn sign_execution(&self, input: &SignExecutionInput) -> Result<SignedExecution> {
+        let prepared = input.signing.prepare(request::now()?)?;
+        let signature = self.sign_message_for(
+            &input.signer,
+            &prepared.message,
+            &format!(
+                "sign {} bytes supplied by the backend",
+                prepared.message.len()
+            ),
+        )?;
+        input.signing.signed(signature, prepared, request::now()?)
+    }
+
+    fn find_signer(&self, wanted: &SignerRef) -> Result<Signer> {
+        self.store
+            .read()?
+            .signers
+            .into_iter()
+            .find(|s| wanted.matches(s))
+            .ok_or_else(|| {
+                SignerError::new(
+                    "signer_not_found",
+                    "The requested signer is not in this profile.",
+                )
+            })
+    }
+
+    fn sign_hash_for(&self, signer: &str, hash: &str, purpose: &str) -> Result<Signature> {
         let digest = keys::parse_hash(hash).ok_or_else(|| {
             SignerError::new(
                 "invalid_request",
                 "hash must be 32 bytes of 0x-prefixed hex.",
             )
         })?;
+        let signed = self.sign_message_for(signer, &digest, purpose)?;
+        Ok(Signature {
+            tag: signed.tag,
+            signer: signed.signer,
+            hash: hash.to_ascii_lowercase(),
+            signature: signed.signature,
+        })
+    }
+
+    fn sign_message_for(
+        &self,
+        signer: &str,
+        message: &[u8],
+        purpose: &str,
+    ) -> Result<MessageSignature> {
+        let wanted = SignerRef::parse(signer)?;
         (self.hooks.update_gate)()?;
         self.store.exclusive(|| {
-            let signer = self
-                .store
-                .read()?
-                .signers
-                .into_iter()
-                .find(|s| wanted.matches(s))
-                .ok_or_else(|| {
-                    SignerError::new(
-                        "signer_not_found",
-                        "The requested signer is not in this profile.",
-                    )
-                })?;
+            let signer = self.find_signer(&wanted)?;
             let stored = self.load_key(&signer)?;
             // Either copy of the setting is enough to require approval.
             if stored.require_touch_id || signer.require_touch_id {
-                (self.hooks.approve)(&format!(
-                    "sign a Tuyo operation with signer “{}”",
-                    signer.tag
-                ))?;
+                (self.hooks.approve)(&format!("{purpose} with signer “{}”", signer.tag))?;
             }
-            Ok(Signature {
+            Ok(MessageSignature {
                 tag: signer.tag.clone(),
                 signer: signer.address.clone(),
-                hash: hash.to_ascii_lowercase(),
                 signature: stored
                     .key
-                    .sign_digest(&keys::personal_message_digest(&digest))?,
+                    .sign_digest(&keys::personal_message_digest(message))?,
             })
         })
     }
@@ -222,6 +272,7 @@ fn check_tag(tag: &str) -> Result<()> {
 
 #[cfg(test)]
 pub mod tests {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::Path;
@@ -231,6 +282,137 @@ pub mod tests {
     use crate::backends::{FileBackend, KeyBackend, StorageSetting};
     use crate::keys::SigningKey;
     use crate::state::StorageName;
+
+    #[test]
+    fn identity_proves_the_original_key_without_storing_an_assertion() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), StorageSetting::Auto, true, true);
+        let signer = f.service.create_signer("agent", false).unwrap();
+        let input: IdentityInput =
+            serde_json::from_value(serde_json::json!({"signer":"agent"})).unwrap();
+        let state = std::fs::read(dir.path().join("state.json")).unwrap();
+        let output = serde_json::to_value(f.service.identity(&input).unwrap()).unwrap();
+        assert_eq!(output["signer"], signer.address);
+        let token = output["headers"]["Tuyo-Agent-Identity"].as_str().unwrap();
+        let claims: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(token).unwrap()).unwrap();
+        assert_eq!(claims["signAddress"], signer.address);
+        assert_eq!(claims["scope"], "all");
+        assert_eq!(output["token"], token);
+        assert_eq!(
+            output["expiresAt"].as_u64().unwrap() - output["issuedAt"].as_u64().unwrap(),
+            300
+        );
+        assert_eq!(std::fs::read(dir.path().join("state.json")).unwrap(), state);
+    }
+
+    #[test]
+    fn identity_keeps_the_update_gate_and_touch_id_requirement() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut f = fixture(dir.path(), StorageSetting::Auto, true, false);
+        f.service.create_signer("agent", true).unwrap();
+        let input: IdentityInput =
+            serde_json::from_value(serde_json::json!({"signer":"agent"})).unwrap();
+        f.service.hooks.update_gate =
+            Box::new(|| Err(SignerError::new("update_required", "Update required.")));
+        assert_eq!(
+            f.service.identity(&input).unwrap_err().code,
+            "update_required"
+        );
+        assert!(f.approvals.borrow().is_empty());
+        f.service.hooks.update_gate = Box::new(|| Ok(()));
+        assert_eq!(
+            f.service.identity(&input).unwrap_err().code,
+            "touch_id_denied"
+        );
+        assert_eq!(f.approvals.borrow().len(), 1);
+    }
+
+    #[test]
+    fn signs_backend_bytes_and_fills_backend_submission_without_execution_knowledge() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), StorageSetting::Auto, true, true);
+        f.service.create_signer("agent", true).unwrap();
+        let now = request::now().unwrap();
+        let expires = time::OffsetDateTime::from_unix_timestamp((now + 120) as i64)
+            .unwrap()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+        let data = format!("0x{}", "ab".repeat(32));
+        let input: SignExecutionInput = serde_json::from_value(serde_json::json!({
+            "signer":"agent", "signing":{
+                "version":1, "method":"personal_sign", "encoding":"hex", "data":data, "expiresAt":expires,
+                "submission": {"method":"PATCH", "path":"/public/future_operations/batch?mode=submit",
+                    "headers":{"Content-Type":"application/json","Idempotency-Key":"backend-key"},
+                    "body":{"signature":null,"context":{"id":"opaque-backend-id"}}},
+            },
+        })).unwrap();
+        let output = serde_json::to_value(f.service.sign_execution(&input).unwrap()).unwrap();
+        assert_eq!(f.approvals.borrow().len(), 1);
+        assert!(f.approvals.borrow()[0].contains("32 bytes"));
+        assert_eq!(
+            output["request"]["path"],
+            "/public/future_operations/batch?mode=submit"
+        );
+        assert_eq!(output["request"]["method"], "PATCH");
+        assert_eq!(output["expiresAt"], now + 120);
+        assert_eq!(
+            output["request"]["headers"]["Idempotency-Key"],
+            "backend-key"
+        );
+        assert_eq!(
+            output["request"]["body"]["context"]["id"],
+            "opaque-backend-id"
+        );
+        assert_eq!(
+            output["signature"],
+            f.service.sign_hash("agent", &data).unwrap().signature
+        );
+        assert_eq!(output["request"]["body"]["signature"], output["signature"]);
+    }
+
+    #[test]
+    fn signs_arbitrary_bytes_without_submission_or_expiry() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), StorageSetting::Auto, true, true);
+        f.service.create_signer("agent", false).unwrap();
+        for data in [
+            "0x".to_owned(),
+            "0x00ff80".to_owned(),
+            format!("0x{}", "42".repeat(65536)),
+        ] {
+            let input: SignExecutionInput = serde_json::from_value(serde_json::json!({
+                "signer":"agent", "signing":{"version":1,"method":"personal_sign","encoding":"hex","data":data},
+            })).unwrap();
+            let output = serde_json::to_value(f.service.sign_execution(&input).unwrap()).unwrap();
+            assert_eq!(output["signature"].as_str().unwrap().len(), 132);
+            assert!(output.get("request").is_none());
+            assert!(output.get("expiresAt").is_none());
+        }
+    }
+
+    #[test]
+    fn generic_signing_preserves_key_approval_and_update_checks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut f = fixture(dir.path(), StorageSetting::Auto, true, false);
+        f.service.create_signer("agent", true).unwrap();
+        let input: SignExecutionInput = serde_json::from_value(serde_json::json!({
+            "signer":"agent", "signing":{"version":1,"method":"personal_sign","encoding":"hex","data":"0x1234"},
+        })).unwrap();
+        f.service.hooks.update_gate =
+            Box::new(|| Err(SignerError::new("update_required", "Update required.")));
+        assert_eq!(
+            f.service.sign_execution(&input).unwrap_err().code,
+            "update_required"
+        );
+        assert!(f.approvals.borrow().is_empty());
+        f.service.hooks.update_gate = Box::new(|| Ok(()));
+        assert_eq!(
+            f.service.sign_execution(&input).unwrap_err().code,
+            "touch_id_denied"
+        );
+        assert_eq!(f.approvals.borrow().len(), 1);
+    }
 
     /// An in-memory credential store.
     #[derive(Clone, Default)]
