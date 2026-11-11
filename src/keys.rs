@@ -55,11 +55,12 @@ impl SigningKey {
     }
 }
 
-/// The digest personal_sign signs for a raw 32-byte message.
-pub fn personal_message_digest(hash: &[u8; 32]) -> [u8; 32] {
+/// The EIP-191 digest for the exact raw message bytes, including an empty message.
+pub fn personal_message_digest(message: &[u8]) -> [u8; 32] {
     let mut hasher = Keccak256::new();
-    hasher.update(b"\x19Ethereum Signed Message:\n32");
-    hasher.update(hash);
+    hasher.update(b"\x19Ethereum Signed Message:\n");
+    hasher.update(message.len().to_string().as_bytes());
+    hasher.update(message);
     hasher.finalize().into()
 }
 
@@ -211,6 +212,31 @@ mod tests {
             key.sign_digest(&personal_message_digest(&hash)).unwrap(),
             "0x48dd510466cee1ce1cb709456ac94c33c2db069d0d7fbc8eb9602254f92fcc3766077972b3cd400b29b542d59a567efd79b7dc880155d4875d6e80d713835f2f1c"
         );
+    }
+
+    #[test]
+    fn matches_viem_for_arbitrary_bytes_and_decimal_length_boundaries() {
+        let vectors: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/execution-signing.json")).unwrap();
+        for vector in vectors {
+            let key = SigningKey::from_hex(vector["privateKey"].as_str().unwrap()).unwrap();
+            let input: crate::request::SigningEnvelope =
+                serde_json::from_value(vector["signing"].clone()).unwrap();
+            let message = input.prepare(2000000000).unwrap().message;
+            let hash = personal_message_digest(&message);
+            assert_eq!(
+                format!("0x{}", hex::encode(hash)),
+                vector["messageHash"],
+                "{}",
+                vector["name"]
+            );
+            assert_eq!(
+                key.sign_digest(&hash).unwrap(),
+                vector["signature"],
+                "{}",
+                vector["name"]
+            );
+        }
     }
 
     #[test]

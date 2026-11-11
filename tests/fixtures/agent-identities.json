@@ -1,0 +1,51 @@
+[
+  {
+    "name": "production",
+    "input": {
+      "signer": "agent",
+      "issuer": "https://api.tuyo.com/",
+      "audience": "https://api.tuyo.com/public"
+    },
+    "privateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+    "signAddress": "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23",
+    "now": 2000000000,
+    "expiresAt": 2000000300,
+    "canonical": "{\"audience\":\"https://api.tuyo.com/public\",\"domain\":\"tuyo-agent-identity\",\"expiresAt\":2000000300,\"issuedAt\":2000000000,\"issuer\":\"https://api.tuyo.com/\",\"scope\":\"all\",\"signAddress\":\"0x2c7536E3605D9C16a7a3D7b1898e529396a65c23\",\"version\":1}",
+    "digest": "0xf0338fc1be9514f05261668bd91cf2698270332371c1d9d4ec09afc2677f7721",
+    "signature": "0xed46b5d88c7b2bd5dbeaf986cc773fdae1984acc24d83d6891dd37c2e9590ebf5947d689794e09859529f1d32626b8251e7a80e9d33862c53ae228b2ab990f391c",
+    "header": "eyJleHBpcmVzQXQiOjIwMDAwMDAzMDAsImlzc3VlZEF0IjoyMDAwMDAwMDAwLCJzY29wZSI6ImFsbCIsInNpZ25BZGRyZXNzIjoiMHgyYzc1MzZFMzYwNUQ5QzE2YTdhM0Q3YjE4OThlNTI5Mzk2YTY1YzIzIiwic2lnbmF0dXJlIjoiMHhlZDQ2YjVkODhjN2IyYmQ1ZGJlYWY5ODZjYzc3M2ZkYWUxOTg0YWNjMjRkODNkNjg5MWRkMzdjMmU5NTkwZWJmNTk0N2Q2ODk3OTRlMDk4NTk1MjlmMWQzMjYyNmI4MjUxZTdhODBlOWQzMzg2MmM1M2FlMjI4YjJhYjk5MGYzOTFjIiwidmVyc2lvbiI6MX0"
+  },
+  {
+    "name": "local-environment",
+    "input": {
+      "signer": "agent",
+      "issuer": "http://localhost:3000/",
+      "audience": "http://localhost:3000/public"
+    },
+    "privateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+    "signAddress": "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23",
+    "now": 2000000000,
+    "expiresAt": 2000000300,
+    "canonical": "{\"audience\":\"http://localhost:3000/public\",\"domain\":\"tuyo-agent-identity\",\"expiresAt\":2000000300,\"issuedAt\":2000000000,\"issuer\":\"http://localhost:3000/\",\"scope\":\"all\",\"signAddress\":\"0x2c7536E3605D9C16a7a3D7b1898e529396a65c23\",\"version\":1}",
+    "digest": "0xa4c34aec2adf8063da739604cd43eca074deecbb8ed75890ee4962dd07f70a99",
+    "signature": "0x0bda5dd166f3c4accd5fee6382ee81004a884ba4cd8d7015792ac4bbbc952e674df79348a9801f50fa1ffeb80a6d6c8e53d96e07edf8e428bb6622e6969eb8361c",
+    "header": "eyJleHBpcmVzQXQiOjIwMDAwMDAzMDAsImlzc3VlZEF0IjoyMDAwMDAwMDAwLCJzY29wZSI6ImFsbCIsInNpZ25BZGRyZXNzIjoiMHgyYzc1MzZFMzYwNUQ5QzE2YTdhM0Q3YjE4OThlNTI5Mzk2YTY1YzIzIiwic2lnbmF0dXJlIjoiMHgwYmRhNWRkMTY2ZjNjNGFjY2Q1ZmVlNjM4MmVlODEwMDRhODg0YmE0Y2Q4ZDcwMTU3OTJhYzRiYmJjOTUyZTY3NGRmNzkzNDhhOTgwMWY1MGZhMWZmZWI4MGE2ZDZjOGU1M2Q5NmUwN2VkZjhlNDI4YmI2NjIyZTY5NjllYjgzNjFjIiwidmVyc2lvbiI6MX0"
+  },
+  {
+    "name": "explicit-all-scope",
+    "input": {
+      "signer": "agent",
+      "issuer": "https://api.tuyo.com/",
+      "audience": "https://api.tuyo.com/public",
+      "scope": "all"
+    },
+    "privateKey": "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+    "signAddress": "0x2c7536E3605D9C16a7a3D7b1898e529396a65c23",
+    "now": 2000000000,
+    "expiresAt": 2000000300,
+    "canonical": "{\"audience\":\"https://api.tuyo.com/public\",\"domain\":\"tuyo-agent-identity\",\"expiresAt\":2000000300,\"issuedAt\":2000000000,\"issuer\":\"https://api.tuyo.com/\",\"scope\":\"all\",\"signAddress\":\"0x2c7536E3605D9C16a7a3D7b1898e529396a65c23\",\"version\":1}",
+    "digest": "0xf0338fc1be9514f05261668bd91cf2698270332371c1d9d4ec09afc2677f7721",
+    "signature": "0xed46b5d88c7b2bd5dbeaf986cc773fdae1984acc24d83d6891dd37c2e9590ebf5947d689794e09859529f1d32626b8251e7a80e9d33862c53ae228b2ab990f391c",
+    "header": "eyJleHBpcmVzQXQiOjIwMDAwMDAzMDAsImlzc3VlZEF0IjoyMDAwMDAwMDAwLCJzY29wZSI6ImFsbCIsInNpZ25BZGRyZXNzIjoiMHgyYzc1MzZFMzYwNUQ5QzE2YTdhM0Q3YjE4OThlNTI5Mzk2YTY1YzIzIiwic2lnbmF0dXJlIjoiMHhlZDQ2YjVkODhjN2IyYmQ1ZGJlYWY5ODZjYzc3M2ZkYWUxOTg0YWNjMjRkODNkNjg5MWRkMzdjMmU5NTkwZWJmNTk0N2Q2ODk3OTRlMDk4NTk1MjlmMWQzMjYyNmI4MjUxZTdhODBlOWQzMzg2MmM1M2FlMjI4YjJhYjk5MGYzOTFjIiwidmVyc2lvbiI6MX0"
+  }
+]
