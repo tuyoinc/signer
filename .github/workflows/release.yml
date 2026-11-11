@@ -17,6 +17,10 @@ on:
         description: Tag to release from main, matching Cargo.toml (for example v0.1.0)
         required: true
         type: string
+      prerelease:
+        description: Mark the release as a prerelease, including versions without a suffix
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,6 +30,7 @@ env:
   # Compiled into the binary; it only installs updates signed by this key.
   TUYO_SIGNER_UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
 
 jobs:
   verify:
@@ -69,7 +74,7 @@ jobs:
             exit 1
           }
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          [[ "${version}" == *-* ]] && pre=true || pre=false
+          [[ "${version}" == *-* || "${RELEASE_PRERELEASE}" == "true" ]] && pre=true || pre=false
           echo "prerelease=${pre}" >> "${GITHUB_OUTPUT}"
 
   linux:
